@@ -1,0 +1,120 @@
+
+
+services:
+  backend:
+    image: frappe/erpnext:v15
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+      - REDIS_SOCKETIO=redis-queue:6379
+
+  frontend:
+    image: frappe/erpnext:v15
+    deploy:
+      restart_policy:
+        condition: on-failure
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      - BACKEND=backend:8000
+      - FRAPPE_SITE_NAME_HEADER=${SITE_NAME}
+      - SOCKETIO=websocket:9000
+      - UPSTREAM_REAL_IP_ADDRESS=127.0.0.1
+      - UPSTREAM_REAL_IP_HEADER=X-Real-IP
+      - UPSTREAM_REAL_IP_RECURSIVE=off
+      - PROXY_READ_TIMEOUT=120
+      - CLIENT_MAX_BODY_SIZE=50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+      - websocket
+
+  websocket:
+    image: frappe/erpnext:v15
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+      - REDIS_SOCKETIO=redis-queue:6379
+      - DB_HOST=db
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      - db
+      - redis-cache
+      - redis-queue
+
+  queue-short:
+    image: frappe/erpnext:v15
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      - DB_HOST=db
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+      - REDIS_SOCKETIO=redis-queue:6379
+
+  scheduler:
+    image: frappe/erpnext:v15
+    command:
+      - bench
+      - schedule
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      - DB_HOST=db
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_CACHE=redis-cache:6379
+      - REDIS_QUEUE=redis-queue:6379
+      - REDIS_SOCKETIO=redis-queue:6379
+
+  db:
+    image: mariadb:10.6
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed # Required for MariaDB 10.6+
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=frappe
+      - MYSQL_USER=frappe
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  redis-cache:
+    image: redis:6-alpine
+
+  redis-queue:
+    image: redis:6-alpine
+
+volumes:
+  mariadb-data:
+  sites:
+  logs:
